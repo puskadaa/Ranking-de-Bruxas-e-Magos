@@ -1,0 +1,93 @@
+import pymongo
+import tkinter as tk
+from tkinter import messagebox, simpledialog
+import bcrypt
+
+client = pymongo.MongoClient("mongodb+srv://root:123@cluster0.uq3jkth.mongodb.net/?appName=Cluster0")
+db = client['ranking_magico']
+colecao = db['usuarios']
+colecao.create_index("username", unique=True)
+
+admin_user = "admin"
+admin_senha = b"admin123"
+if not colecao.find_one({"username": admin_user}):
+    hash_admin = bcrypt.hashpw(admin_senha, bcrypt.gensalt())
+    colecao.insert_one({"username": admin_user, "password_hash": hash_admin, "points": 0})
+    print("Admin criado: usuário 'admin' / senha 'admin123'")
+
+def registrar():
+    user = entry_user.get().strip()
+    senha = entry_senha.get().encode('utf-8')
+
+    if not user or not senha:
+        messagebox.showwarning("Erro", "Preencha todos os campos!")
+        return
+
+    if colecao.find_one({"username": user}):
+        messagebox.showwarning("Erro", "Usuário já existe!")
+        return
+
+    hash_senha = bcrypt.hashpw(senha, bcrypt.gensalt())
+    colecao.insert_one({"username": user, "password_hash": hash_senha, "points": 0})
+    messagebox.showinfo("Sucesso", "Usuário registrado com sucesso!")
+
+def login():
+    global usuario_logado
+    user = entry_user.get().strip()
+    senha = entry_senha.get().encode('utf-8')
+
+    usuario = colecao.find_one({"username": user})
+    if usuario and bcrypt.checkpw(senha, usuario["password_hash"]):
+        usuario_logado = user
+        messagebox.showinfo("Bem-vindo", f"Bem-vindo(a), {user}!")
+        abrir_ranking()
+    else:
+        messagebox.showerror("Erro", "Usuário ou senha incorretos.")
+
+def abrir_ranking():
+    ranking = tk.Toplevel(root)
+    ranking.title("Ranking de Bruxas e Magos")
+    ranking.geometry("350x350")
+
+    tk.Label(ranking, text="Ranking de Usuários", font=("Arial", 12, "bold")).pack(pady=5)
+
+    lista = tk.Listbox(ranking, width=40)
+    lista.pack(pady=10)
+
+    for u in colecao.find().sort("points", -1):
+        lista.insert(tk.END, f"{u['username']} - {u['points']} pontos")
+
+    if usuario_logado == "admin":
+        tk.Button(ranking, text="Adicionar pontos a um usuário", bg="#f39c12", fg="white",
+                  command=adicionar_pontos_admin).pack(pady=10)
+
+def adicionar_pontos_admin():
+    user_destino = simpledialog.askstring("Adicionar Pontos", "Digite o nome do usuário para adicionar pontos:")
+    if not user_destino:
+        return
+
+    usuario = colecao.find_one({"username": user_destino})
+    if usuario:
+        colecao.update_one({"username": user_destino}, {"$inc": {"points": 100}})
+        messagebox.showinfo("Sucesso", f"100 pontos adicionados a {user_destino}!")
+    else:
+        messagebox.showerror("Erro", "Usuário não encontrado.")
+
+root = tk.Tk()
+root.title("Ranking de Bruxas e Magos")
+root.geometry("300x300")
+
+usuario_logado = None
+
+tk.Label(root, text="Usuário:").pack(pady=5)
+entry_user = tk.Entry(root)
+entry_user.pack()
+
+tk.Label(root, text="Senha:").pack(pady=5)
+entry_senha = tk.Entry(root, show="*")
+entry_senha.pack()
+
+tk.Button(root, text="Registrar", command=registrar, bg="#8e44ad", fg="white").pack(pady=5)
+tk.Button(root, text="Login", command=login, bg="#27ae60", fg="white").pack(pady=5)
+
+root.mainloop()
